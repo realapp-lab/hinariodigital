@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hinário Digital – Contralto</title>
+<meta name="description" content="Digite o número do hino e abra a partitura do seu hinário.">
+<meta name="theme-color" content="#1f3a5f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="home" class="wrap">
+  <header class="top">
+    <img src="icon-192.png" alt="" width="56" height="56">
+    <div><h1>Hinário Digital</h1><p>Órgão · Dedilhado de contralto</p></div>
+  </header>
+
+  <section class="card" id="pdfCard">
+    <h2 id="pdfTitle">Carregue o seu hinário</h2>
+    <p id="pdfMsg" class="muted">Por respeito aos direitos autorais, este aplicativo não traz o hinário. Escolha o seu PDF uma única vez: ele fica guardado só neste aparelho e depois funciona sem internet.</p>
+    <label class="btn" id="pdfPick"><input type="file" id="pdfFile" accept="application/pdf,.pdf" hidden><span id="pdfPickText">Escolher o PDF do hinário</span></label>
+    <progress id="pdfProg" max="100" value="0" hidden></progress>
+    <p class="small"><a href="#" id="pdfRemove" hidden>Remover o PDF deste aparelho</a></p>
+  </section>
+
+  <section class="card">
+    <label for="num" class="lbl">Digite o número do hino</label>
+    <div class="row">
+      <input id="num" type="search" inputmode="numeric" autocomplete="off" enterkeyhint="go" placeholder="Ex.: 125 ou parte do título" aria-describedby="preview">
+      <button class="btn" id="go">Abrir</button>
+    </div>
+    <p id="preview" class="preview" aria-live="polite"></p>
+    <ul id="results" class="list"></ul>
+  </section>
+
+  <section class="card" id="favCard" hidden><h2>★ Favoritos</h2><div id="favList" class="chips"></div></section>
+  <section class="card" id="recCard" hidden><h2>Abertos recentemente</h2><div id="recList" class="chips"></div></section>
+
+  <section class="card">
+    <button class="btn ghost" id="openIndex">Abrir índice alfabético do hinário</button>
+  </section>
+  <p class="small center">Hinos 1 a 480 · Use este aplicativo somente nos recintos e para os fins permitidos pelo hinário.</p>
+</main>
+
+<section id="viewer" hidden aria-label="Partitura">
+  <header class="vbar">
+    <button class="icon" id="vBack" aria-label="Voltar">←</button>
+    <div class="vtitle"><strong id="vNum"></strong><span id="vName"></span></div>
+    <button class="icon" id="vFav" aria-label="Favoritar" aria-pressed="false">☆</button>
+  </header>
+  <div id="stage"><div id="pages"></div><p id="vMsg" class="vmsg" hidden></p></div>
+  <footer class="vtools">
+    <button class="icon" id="vPrev" aria-label="Hino anterior">◀</button>
+    <button class="icon" id="zOut" aria-label="Diminuir">−</button>
+    <button class="icon wide" id="zFit" aria-label="Ajustar à largura">Ajustar</button>
+    <button class="icon" id="zIn" aria-label="Aumentar">+</button>
+    <button class="icon" id="vNext" aria-label="Próximo hino">▶</button>
+  </footer>
+</section>
+
+<script src="hinos.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
