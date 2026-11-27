@@ -1,5 +1,7 @@
-import * as pdfjsLib from './pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.min.mjs', import.meta.url).href;
+// Leitor de PDF carregado só quando necessário, para a busca funcionar mesmo se ele falhar.
+let pdfjsP;
+const getPdfjs = () => pdfjsP || (pdfjsP = import('./pdf.min.mjs').then(m => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.min.mjs', document.baseURI).href; return m }));
+const ERRO_LEITOR = 'Não foi possível carregar o leitor de PDF. Confirme que os arquivos pdf.min.mjs e pdf.worker.min.mjs foram publicados junto com o app e abra o app pelo endereço https:// (não clicando no arquivo index.html no computador ou no celular).';
 
 const $ = id => document.getElementById(id);
 const norm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -27,16 +29,17 @@ const idb = async (modo, fn) => { const db = await DB(); return new Promise((ok,
 
 /* ---------- PDF ---------- */
 let pdfDoc = null;
-class BlobRange extends pdfjsLib.PDFDataRangeTransport {
-  constructor(blob) { super(blob.size, null); this.blob = blob }
-  requestDataRange(b, e) { this.blob.slice(b, e).arrayBuffer().then(buf => this.onDataRange(b, new Uint8Array(buf))) }
-}
 async function abrirPdf(blob) {
-  let task = pdfjsLib.getDocument({ range: new BlobRange(blob), length: blob.size, disableAutoFetch: true, disableStream: true });
+  const lib = await getPdfjs();
+  class BlobRange extends lib.PDFDataRangeTransport {
+    constructor(b) { super(b.size, null); this.blob = b }
+    requestDataRange(b, e) { this.blob.slice(b, e).arrayBuffer().then(buf => this.onDataRange(b, new Uint8Array(buf))) }
+  }
+  let task = lib.getDocument({ range: new BlobRange(blob), length: blob.size, disableAutoFetch: true, disableStream: true });
   try { return await task.promise }
   catch (e) {
     if (blob.size > 400e6) throw e;
-    task = pdfjsLib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+    task = lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
     return await task.promise;
   }
 }
@@ -54,7 +57,7 @@ async function carregarSalvo() {
   try {
     const reg = await idb('readonly', s => s.get('pdf'));
     if (reg?.blob) { pdfDoc = await abrirPdf(reg.blob); mostrarEstadoPdf(reg) } else mostrarEstadoPdf();
-  } catch (e) { pdfDoc = null; mostrarEstadoPdf(); $('pdfMsg').textContent = 'Não foi possível abrir o PDF guardado. Escolha o arquivo de novo.' }
+  } catch (e) { pdfDoc = null; mostrarEstadoPdf(); $('pdfMsg').textContent = await getPdfjs().then(() => 'Não foi possível abrir o PDF guardado. Escolha o arquivo de novo.', () => ERRO_LEITOR) }
 }
 $('pdfFile').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
@@ -65,7 +68,7 @@ $('pdfFile').addEventListener('change', async e => {
     await idb('readwrite', s => s.put({ blob: f, nome: f.name, tamanho: f.size, em: Date.now() }, 'pdf'));
     pdfDoc = novo; mostrarEstadoPdf({ nome: f.name });
     navigator.storage?.persist?.();
-  } catch (err) { $('pdfMsg').textContent = 'Este arquivo não parece ser um PDF válido. Tente de novo.' }
+  } catch (err) { $('pdfMsg').textContent = await getPdfjs().then(() => 'Não foi possível abrir este arquivo como PDF. Tente de novo ou use o arquivo original do hinário.', () => ERRO_LEITOR) }
   prog.hidden = true; e.target.value = '';
 });
 $('pdfRemove').addEventListener('click', async e => {
@@ -181,4 +184,5 @@ let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() 
 
 /* ---------- início ---------- */
 listas(); carregarSalvo();
+if (location.protocol === 'file:') $('pdfMsg').textContent = 'Você abriu o arquivo direto do aparelho. Para o hinário funcionar, publique a pasta em um endereço https:// (por exemplo, GitHub Pages) e abra por lá.';
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
