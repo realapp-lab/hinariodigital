@@ -16,14 +16,16 @@
   <header class="top">
     <img src="icon-192.png" alt="" width="56" height="56">
     <div><h1>Hinário Digital</h1><p>Órgão · Dedilhado de contralto</p></div>
+    <button class="inst" id="installBtn" hidden>⬇ Instalar</button>
   </header>
+  <p id="installHint" class="small hint" hidden></p>
 
   <section class="card" id="pdfCard">
     <h2 id="pdfTitle">Carregue o seu hinário</h2>
     <p id="pdfMsg" class="muted">Por respeito aos direitos autorais, este aplicativo não traz o hinário. Escolha o seu PDF uma única vez: ele fica guardado só neste aparelho e depois funciona sem internet.</p>
-    <label class="btn" id="pdfPick"><input type="file" id="pdfFile" accept="application/pdf,.pdf" hidden><span id="pdfPickText">Escolher o PDF do hinário</span></label>
+    <label class="btn" id="pdfPick"><input type="file" id="pdfFile" accept="application/pdf,.pdf" multiple hidden><span id="pdfPickText">Escolher o PDF do hinário</span></label>
     <progress id="pdfProg" max="100" value="0" hidden></progress>
-    <p class="small"><a href="#" id="pdfRemove" hidden>Remover o PDF deste aparelho</a></p>
+    <div id="libBox" hidden><h3 class="sub">Meus PDFs neste aparelho</h3><ul class="lib" id="libList"></ul></div>
   </section>
 
   <section class="card">
@@ -39,7 +41,7 @@
   <section class="card" id="favCard" hidden><h2>★ Favoritos</h2><div id="favList" class="chips"></div></section>
   <section class="card" id="recCard" hidden><h2>Abertos recentemente</h2><div id="recList" class="chips"></div></section>
 
-  <section class="card">
+  <section class="card" id="indexCard">
     <button class="btn ghost" id="openIndex">Abrir índice alfabético do hinário</button>
   </section>
   <p class="small center">Hinos 1 a 480 · Use este aplicativo somente nos recintos e para os fins permitidos pelo hinário.</p>

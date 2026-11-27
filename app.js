@@ -27,8 +27,10 @@ const DB = () => new Promise((ok, err) => {
 });
 const idb = async (modo, fn) => { const db = await DB(); return new Promise((ok, err) => { const tx = db.transaction('arquivos', modo); const req = fn(tx.objectStore('arquivos')); tx.oncomplete = () => ok(req && req.result); tx.onerror = () => err(tx.error); }) };
 
-/* ---------- PDF ---------- */
-let pdfDoc = null;
+/* ---------- PDF e biblioteca de PDFs ---------- */
+let pdfDoc = null, modoIndice = true;
+let lib = lsGet('hinario:lib', []), ativo = lsGet('hinario:ativo', null);
+const salvarLib = () => { lsSet('hinario:lib', lib); lsSet('hinario:ativo', ativo) };
 async function abrirPdf(blob) {
   const lib = await getPdfjs();
   class BlobRange extends lib.PDFDataRangeTransport {
@@ -43,50 +45,95 @@ async function abrirPdf(blob) {
     return await task.promise;
   }
 }
-function mostrarEstadoPdf(info) {
-  const tem = !!pdfDoc;
-  $('pdfTitle').textContent = tem ? 'Hinário carregado ✓' : 'Carregue o seu hinário';
-  $('pdfMsg').textContent = tem
-    ? `${info?.nome || 'PDF'} · ${pdfDoc.numPages} páginas. Guardado neste aparelho, funciona sem internet.` + (pdfDoc.numPages !== PAGINAS_ESPERADAS ? ` Atenção: o índice foi feito para um PDF de ${PAGINAS_ESPERADAS} páginas; se os hinos abrirem na página errada, use o arquivo original.` : '')
-    : 'Por respeito aos direitos autorais, este aplicativo não traz o hinário. Escolha o seu PDF uma única vez: ele fica guardado só neste aparelho e depois funciona sem internet.';
-  $('pdfPickText').textContent = tem ? 'Trocar o PDF' : 'Escolher o PDF do hinário';
-  $('pdfPick').classList.toggle('ghost', tem);
-  $('pdfRemove').hidden = !tem;
+const mb = b => (b / 1048576).toFixed(b > 1e7 ? 0 : 1).replace('.', ',') + ' MB';
+function renderBiblio() {
+  const ul = $('libList'); ul.replaceChildren();
+  lib.forEach(m => {
+    const li = document.createElement('li'), info = document.createElement('div'), nome = document.createElement('strong'), sub = document.createElement('small'), acoes = document.createElement('div');
+    nome.textContent = m.nome.replace(/\.pdf$/i, '');
+    sub.textContent = [m.paginas ? m.paginas + ' páginas' : null, mb(m.tamanho), m.id === ativo ? '✓ em uso' : null].filter(Boolean).join(' · ');
+    info.append(nome, sub); acoes.className = 'libact';
+    if (m.id !== ativo) { const u = document.createElement('button'); u.className = 'mini'; u.textContent = 'Usar'; u.onclick = () => usar(m.id); acoes.append(u) }
+    const d = document.createElement('button'); d.className = 'mini danger'; d.textContent = 'Apagar'; d.onclick = () => apagar(m.id); acoes.append(d);
+    li.append(info, acoes); ul.append(li);
+  });
+  $('libBox').hidden = !lib.length;
+  $('pdfPickText').textContent = lib.length ? 'Adicionar outro PDF' : 'Escolher o PDF do hinário';
+  $('pdfPick').classList.toggle('ghost', !!lib.length);
 }
-async function carregarSalvo() {
-  try {
-    const reg = await idb('readonly', s => s.get('pdf'));
-    if (reg?.blob) { pdfDoc = await abrirPdf(reg.blob); mostrarEstadoPdf(reg) } else mostrarEstadoPdf();
-  } catch (e) { pdfDoc = null; mostrarEstadoPdf(); $('pdfMsg').textContent = await getPdfjs().then(() => 'Não foi possível abrir o PDF guardado. Escolha o arquivo de novo.', () => ERRO_LEITOR) }
+function aplicarModo() {
+  $('num').placeholder = modoIndice ? 'Ex.: 125 ou parte do título' : 'Número da página';
+  $('num').inputMode = 'numeric';
+  $('indexCard').hidden = !modoIndice; listas(); atualizar();
+}
+function mostrarEstadoPdf(m, aviso) {
+  const tem = !!pdfDoc;
+  $('pdfTitle').textContent = tem ? 'Hinário pronto ✓' : 'Carregue o seu hinário';
+  $('pdfMsg').textContent = aviso || (tem
+    ? (modoIndice ? 'Hinário com índice de hinos: digite o número do hino (1 a 480). Guardado neste aparelho, funciona sem internet.'
+                  : `Este PDF tem ${pdfDoc.numPages} páginas e não é o hinário com índice de hinos: aqui você digita o número da PÁGINA.`)
+    : 'Por respeito aos direitos autorais, este aplicativo não traz o hinário. Escolha o seu PDF uma única vez: ele fica guardado só neste aparelho e depois funciona sem internet.');
+}
+async function carregarAtivo(aviso) {
+  pdfDoc = null; modoIndice = true;
+  let m = lib.find(x => x.id === ativo);
+  if (!m && lib.length) { m = lib[0]; ativo = m.id; salvarLib() }
+  if (m) {
+    try {
+      const reg = await idb('readonly', s => s.get('pdf:' + m.id));
+      pdfDoc = await abrirPdf(reg.blob); m.paginas = pdfDoc.numPages; salvarLib();
+      modoIndice = pdfDoc.numPages === PAGINAS_ESPERADAS;
+    } catch (e) { aviso = await getPdfjs().then(() => 'Não foi possível abrir este PDF. Apague-o da lista e escolha o arquivo de novo.', () => ERRO_LEITOR) }
+  }
+  mostrarEstadoPdf(m, aviso); renderBiblio(); aplicarModo();
+}
+const usar = async id => { ativo = id; salvarLib(); $('pdfMsg').textContent = 'Abrindo…'; await carregarAtivo() };
+async function apagar(id) {
+  const m = lib.find(x => x.id === id); if (!m) return;
+  if (!confirm(`Apagar “${m.nome.replace(/\.pdf$/i, '')}” deste aparelho? Você poderá carregá-lo de novo depois.`)) return;
+  await idb('readwrite', s => s.delete('pdf:' + id));
+  lib = lib.filter(x => x.id !== id); if (ativo === id) ativo = lib[0]?.id || null; salvarLib(); await carregarAtivo();
+}
+async function iniciarBiblio() {
+  try { // migra o PDF guardado pelas versões anteriores
+    const velho = await idb('readonly', s => s.get('pdf'));
+    if (velho?.blob) {
+      await idb('readwrite', s => s.put(velho, 'pdf:antigo')); await idb('readwrite', s => s.delete('pdf'));
+      if (!lib.some(x => x.id === 'antigo')) { lib.push({ id: 'antigo', nome: velho.nome || 'Hinário.pdf', tamanho: velho.tamanho || velho.blob.size, paginas: null, em: velho.em || Date.now() }); ativo = ativo || 'antigo'; salvarLib() }
+    }
+  } catch (e) {}
+  await carregarAtivo();
 }
 $('pdfFile').addEventListener('change', async e => {
-  const f = e.target.files[0]; if (!f) return;
+  const arqs = [...e.target.files]; if (!arqs.length) return;
   const prog = $('pdfProg'); prog.hidden = false; prog.removeAttribute('value');
-  $('pdfMsg').textContent = 'Guardando o hinário neste aparelho… isso pode levar um minuto.';
-  try {
-    const novo = await abrirPdf(f);
-    await idb('readwrite', s => s.put({ blob: f, nome: f.name, tamanho: f.size, em: Date.now() }, 'pdf'));
-    pdfDoc = novo; mostrarEstadoPdf({ nome: f.name });
-    navigator.storage?.persist?.();
-  } catch (err) { $('pdfMsg').textContent = await getPdfjs().then(() => 'Não foi possível abrir este arquivo como PDF. Tente de novo ou use o arquivo original do hinário.', () => ERRO_LEITOR) }
+  let ultimo = null, erro = null;
+  for (const [i, f] of arqs.entries()) {
+    $('pdfMsg').textContent = `Guardando neste aparelho (${i + 1} de ${arqs.length})… isso pode levar um minuto.`;
+    const igual = lib.find(x => x.nome === f.name && x.tamanho === f.size);
+    if (igual) { ultimo = igual.id; continue }
+    try {
+      const doc = await abrirPdf(f), id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      await idb('readwrite', s => s.put({ blob: f, nome: f.name, tamanho: f.size, em: Date.now() }, 'pdf:' + id));
+      lib.push({ id, nome: f.name, tamanho: f.size, paginas: doc.numPages, em: Date.now() }); ultimo = id;
+    } catch (err) { erro = await getPdfjs().then(() => `“${f.name}” não parece ser um PDF válido.`, () => ERRO_LEITOR) }
+  }
+  if (ultimo) ativo = ultimo; salvarLib(); navigator.storage?.persist?.();
   prog.hidden = true; e.target.value = '';
-});
-$('pdfRemove').addEventListener('click', async e => {
-  e.preventDefault();
-  if (!confirm('Remover o PDF guardado neste aparelho? Você poderá carregá-lo de novo depois.')) return;
-  await idb('readwrite', s => s.delete('pdf')); pdfDoc = null; mostrarEstadoPdf();
+  await carregarAtivo(erro);
 });
 
 /* ---------- tela inicial ---------- */
 function chip(n) { const h = porNumero(n); const b = document.createElement('button'); b.className = 'chip'; b.innerHTML = '<b></b> '; b.firstChild.textContent = n; b.append(h.t.length > 22 ? h.t.slice(0, 21) + '…' : h.t); b.onclick = () => abrirHino(n); return b }
 function listas() {
   for (const [id, card, arr] of [['favList', 'favCard', favs], ['recList', 'recCard', recs]]) {
-    const el = $(id); el.replaceChildren(...arr.map(chip)); $(card).hidden = !arr.length;
+    const el = $(id); el.replaceChildren(...(modoIndice ? arr : []).map(chip)); $(card).hidden = !arr.length || !modoIndice;
   }
 }
 function atualizar() {
   const q = $('num').value.trim(), pv = $('preview'), ul = $('results'); ul.replaceChildren(); pv.textContent = '';
   if (!q) return;
+  if (!modoIndice) { pv.textContent = /^\d+$/.test(q) ? (pdfDoc && +q >= 1 && +q <= pdfDoc.numPages ? `Página ${+q} de ${pdfDoc.numPages}` : `Digite uma página de 1 a ${pdfDoc ? pdfDoc.numPages : '…'}.`) : 'Digite o número da página.'; return }
   if (/^\d+$/.test(q)) {
     const n = +q;
     pv.textContent = n >= 1 && n <= 480 ? `Hino ${n} – ${porNumero(n).t}` : 'Digite um número de 1 a 480.';
@@ -99,6 +146,7 @@ function atualizar() {
 $('num').addEventListener('input', atualizar);
 function ir() {
   const q = $('num').value.trim();
+  if (!modoIndice) { if (/^\d+$/.test(q) && pdfDoc && +q >= 1 && +q <= pdfDoc.numPages) abrirPagina(+q); return }
   if (/^\d+$/.test(q) && +q >= 1 && +q <= 480) return abrirHino(+q);
   const f = HINOS.filter(h => h.k.includes(norm(q)));
   if (q && f.length === 1) abrirHino(f[0].n);
@@ -110,6 +158,7 @@ $('openIndex').addEventListener('click', () => abrirVisor({ titulo: 'Índice', n
 /* ---------- visor ---------- */
 let atual = null, token = 0;
 const stage = $('stage'), pages = $('pages');
+function abrirPagina(p) { abrirVisor({ n: 0, pag: true, titulo: 'Pág. ' + p, nome: 'de ' + pdfDoc.numPages, de: p, ate: p, y: 0 }) }
 function abrirHino(n) {
   const h = porNumero(n);
   recs = [n, ...recs.filter(x => x !== n)].slice(0, 8); lsSet('hinario:rec', recs);
@@ -120,7 +169,7 @@ function abrirVisor(v) {
   atual = v; $('vNum').textContent = v.titulo; $('vName').textContent = v.nome;
   $('viewer').hidden = false; document.body.style.overflow = 'hidden';
   if (history.state?.v !== 1) history.pushState({ v: 1 }, '');
-  $('vFav').hidden = !v.n; $('vPrev').disabled = $('vNext').disabled = !v.n;
+  $('vFav').hidden = !v.n; $('vPrev').disabled = $('vNext').disabled = !(v.n || v.pag);
   marcarFav(); renderizar(true);
 }
 function fecharVisor(voltar = true) {
@@ -131,7 +180,7 @@ window.addEventListener('popstate', () => { if (!$('viewer').hidden) fecharVisor
 $('vBack').addEventListener('click', () => fecharVisor());
 function marcarFav() { const on = atual?.n && favs.includes(atual.n); $('vFav').textContent = on ? '★' : '☆'; $('vFav').setAttribute('aria-pressed', on) }
 $('vFav').addEventListener('click', () => { if (!atual?.n) return; favs = favs.includes(atual.n) ? favs.filter(x => x !== atual.n) : [...favs, atual.n].sort((a, b) => a - b); lsSet('hinario:fav', favs); marcarFav() });
-const vizinho = d => { if (atual?.n) { const n = atual.n + d; if (n >= 1 && n <= 480) abrirHino(n) } };
+const vizinho = d => { if (atual?.pag) { const p = atual.de + d; if (p >= 1 && p <= pdfDoc.numPages) abrirPagina(p); return } if (atual?.n) { const n = atual.n + d; if (n >= 1 && n <= 480) abrirHino(n) } };
 $('vPrev').addEventListener('click', () => vizinho(-1));
 $('vNext').addEventListener('click', () => vizinho(1));
 addEventListener('keydown', e => { if ($('viewer').hidden) return; if (e.key === 'ArrowRight') vizinho(1); else if (e.key === 'ArrowLeft') vizinho(-1); else if (e.key === 'Escape') fecharVisor(); else if (e.key === '+') mudarZoom(.25); else if (e.key === '-') mudarZoom(-.25) });
@@ -182,7 +231,21 @@ const fimToque = e => { const tinha2 = toques.size === 2; toques.delete(e.pointe
 stage.addEventListener('pointerup', fimToque); stage.addEventListener('pointercancel', fimToque);
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (atual && !$('viewer').hidden) renderizar(false) }, 250) });
 
+/* ---------- instalar o app ---------- */
+let conviteInstalar = null;
+const jaInstalado = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); conviteInstalar = e; if (!jaInstalado()) $('installBtn').hidden = false });
+addEventListener('appinstalled', () => { conviteInstalar = null; $('installBtn').hidden = true; $('installHint').hidden = true });
+$('installBtn').addEventListener('click', async () => {
+  if (conviteInstalar) { conviteInstalar.prompt(); try { await conviteInstalar.userChoice } catch (e) {} conviteInstalar = null; $('installBtn').hidden = true }
+  else $('installHint').hidden = !$('installHint').hidden;
+});
+if ((/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && !jaInstalado()) {
+  $('installBtn').hidden = false;
+  $('installHint').textContent = 'No iPhone/iPad: toque no botão Compartilhar (quadrado com seta) e escolha “Adicionar à Tela de Início”.';
+}
+
 /* ---------- início ---------- */
-listas(); carregarSalvo();
+listas(); iniciarBiblio();
 if (location.protocol === 'file:') $('pdfMsg').textContent = 'Você abriu o arquivo direto do aparelho. Para o hinário funcionar, publique a pasta em um endereço https:// (por exemplo, GitHub Pages) e abra por lá.';
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));

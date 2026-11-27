@@ -8,7 +8,7 @@ Aplicativo web (PWA) para abrir a partitura do hinário digitando o número do h
 3. Na primeira vez, toque em **Escolher o PDF do hinário** e selecione o seu arquivo. Ele é guardado só naquele aparelho (não é enviado a lugar nenhum), e depois o app funciona sem internet.
 4. Digite o número (ou parte do título) e toque em **Abrir**.
 
-Recursos: busca por número ou título, partitura com zoom (botões ou pinça), hino anterior/seguinte, favoritos, recentes e atalho para o índice alfabético do hinário.
+Recursos: lista **Meus PDFs neste aparelho** (adicione vários PDFs, escolha qual usar e apague os que não quiser), busca por número ou título, partitura com zoom (botões ou pinça), hino anterior/seguinte, favoritos, recentes e atalho para o índice alfabético do hinário.
 
 ## Direitos autorais (importante)
 A página 3 do PDF informa: "Todos os direitos reservados", "Proibida a reprodução total ou parcial" e que é "terminantemente vedada a distribuição ou comercialização fora dos recintos da Congregação Cristã no Brasil".
@@ -21,3 +21,7 @@ O índice foi feito para o PDF de 534 páginas (hinos nas páginas 8 a 519; índ
 ## Arquivos
 `index.html`, `style.css`, `app.js`, `hinos.js`, `manifest.webmanifest`, `service-worker.js`, ícones e o leitor de PDF `pdf.min.mjs` / `pdf.worker.min.mjs` (PDF.js, licença Apache 2.0 em `LICENSE-pdfjs.txt`).
 Ao mudar qualquer arquivo depois de publicado, aumente o número da versão em `service-worker.js` (`hinario-v1` → `hinario-v2`) para os celulares atualizarem.
+
+
+## Vários PDFs
+O índice de hinos (1 a 480) vale para o PDF de 534 páginas. Qualquer outro PDF adicionado abre pelo **número da página**. Cada PDF fica guardado só neste aparelho e pode ser apagado pela lista.
